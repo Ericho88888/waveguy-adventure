@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="鐵快司機">
+<meta name="theme-color" content="#1e40af">
+<title>鐵快司機 App</title>
+
+<!-- PWA Manifest -->
+<link rel="manifest" href="manifest.json">
+<!-- For iOS PWA icon (same domain) -->
+<link rel="apple-touch-icon" href="icon-192.png">
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, onSnapshot, query, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js';
+
+const firebaseConfig = {
+  apiKey:            "AIzaSyAFHm3tJD_CH4TQm_ts41uj3lpKH-h8zF4",
+  authDomain:        "logistics-system-3b569.firebaseapp.com",
+  projectId:         "logistics-system-3b569",
+  storageBucket:     "logistics-system-3b569.firebasestorage.app",
+  messagingSenderId: "75459052754",
+  appId:             "1:75459052754:web:66da963db6486f632c190b"
+};
+
+const app  = initializeApp(firebaseConfig);
+const db   = getFirestore(app);
+const auth = getAuth(app);
+const storage = getStorage(app);
+
+window._db      = db;
+window._auth    = auth;
+window._storage = storage;
+window._fs      = { collection, doc, getDoc, getDocs, setDoc, updateDoc, onSnapshot, query, where };
+window._authFn  = { signInWithEmailAndPassword, signOut, onAuthStateChanged };
+window._storageFn = { ref, uploadBytes, getDownloadURL };
+window._firebaseReady = true;
+window.dispatchEvent(new Event('firebase-ready'));
+</script>
+
+<!-- QR Scanner -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --blue:#1e40af; --blue-light:#eff6ff; --blue-mid:#2563eb;
+  --green:#16a34a; --green-light:#f0fdf4;
+  --orange:#ea580c; --orange-light:#fff7ed;
+  --red:#dc2626; --red-light:#fef2f2;
+  --gray-50:#f9fafb; --gray-100:#f3f4f6; --gray-200:#e5e7eb;
+  --gray-400:#9ca3af; --gray-600:#4b5563; --gray-800:#1f2937;
+  --radius:12px; --shadow:0 2px 8px rgba(0,0,0,.1);
+}
+html,body{height:100%;overflow:hidden;background:#f1f5f9;}
+body{font-family:'Noto Sans TC',system-ui,sans-serif;color:var(--gray-800);display:flex;flex-direction:column;}
+
+/* ── LOGIN ── */
+#login-screen{
+  position:fixed;inset:0;background:linear-gradient(160deg,#1e3a8a 0%,#1e40af 50%,#2563eb 100%);
+  display:flex;align-items:center;justify-content:center;z-index:1000;padding:24px;
+}
+.login-card{background:#fff;border-radius:20px;padding:32px 24px;width:100%;max-width:340px;box-shadow:0 20px 60px rgba(0,0,0,.3);}
+.login-logo{text-align:center;margin-bottom:24px;}
+.login-logo .emoji{font-size:48px;margin-bottom:8px;}
+.login-logo .brand{font-size:10px;font-weight:800;color:var(--blue-mid);letter-spacing:4px;}
+.login-logo .title{font-size:20px;font-weight:800;color:#1e3a8a;margin-top:2px;}
+.login-logo .sub{font-size:12px;color:var(--gray-400);margin-top:4px;}
+.inp-group{margin-bottom:14px;}
+.inp-group label{font-size:12px;font-weight:600;color:var(--gray-600);display:block;margin-bottom:5px;}
+.inp-group input{width:100%;border:1.5px solid var(--gray-200);border-radius:10px;padding:12px 14px;font-size:15px;font-family:inherit;outline:none;transition:border-color .15s;}
+.inp-group input:focus{border-color:var(--blue-mid);}
+.btn-login{width:100%;background:var(--blue-mid);color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:6px;}
+.btn-login:active{background:#1d4ed8;}
+.login-err{background:var(--red-light);border:1px solid #fecaca;border-radius:8px;padding:9px 12px;font-size:12px;color:var(--red);margin-bottom:12px;display:none;}
+.login-loading{text-align:center;font-size:13px;color:var(--gray-400);padding:10px;display:none;}
+
+/* ── APP SHELL ── */
+#app{display:none;flex-direction:column;height:100%;}
+#app.visible{display:flex;}
+
+/* ── TOP BAR ── */
+.topbar{background:var(--blue);color:#fff;padding:12px 16px;padding-top:calc(12px + env(safe-area-inset-top));display:flex;align-items:center;gap:10px;flex-shrink:0;}
+.topbar-icon{font-size:22px;}
+.topbar-title{font-size:16px;font-weight:700;flex:1;}
+.topbar-sub{font-size:11px;opacity:.8;}
+.topbar-btn{background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;font-family:inherit;}
+
+/* ── PAGES ── */
+.page{flex:1;overflow-y:auto;display:none;-webkit-overflow-scrolling:touch;}
+.page.active{display:block;}
+.page-inner{padding:16px;padding-bottom:calc(80px + env(safe-area-inset-bottom));}
+
+/* ── BOTTOM NAV ── */
+.bottom-nav{background:#fff;border-top:1px solid var(--gray-200);display:flex;flex-shrink:0;padding-bottom:env(safe-area-inset-bottom);}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;padding:10px 0 8px;cursor:pointer;border:none;background:none;color:var(--gray-400);font-family:inherit;transition:color .15s;}
+.nav-item.active{color:var(--blue-mid);}
+.nav-item .nav-icon{font-size:22px;line-height:1;}
+.nav-item .nav-label{font-size:10px;font-weight:600;margin-top:3px;}
+
+/* ── CARDS ── */
+.card{background:#fff;border-radius:var(--radius);padding:16px;margin-bottom:12px;box-shadow:var(--shadow);}
+.card-title{font-size:13px;font-weight:700;color:var(--gray-600);margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px;}
+
+/* ── ORDER CARD ── */
+.order-card{background:#fff;border-radius:var(--radius);padding:14px;margin-bottom:10px;box-shadow:var(--shadow);border-left:4px solid var(--blue-mid);position:relative;}
+.order-card.cod{border-left-color:var(--orange);}
+.order-card.done{border-left-color:var(--green);opacity:.75;}
+.order-id{font-size:11px;font-weight:700;color:var(--blue-mid);font-family:monospace;margin-bottom:6px;}
+.order-name{font-size:17px;font-weight:800;margin-bottom:2px;}
+.order-phone{font-size:14px;color:var(--blue-mid);font-weight:600;margin-bottom:4px;}
+.order-addr{font-size:13px;color:var(--gray-600);margin-bottom:8px;line-height:1.4;}
+.order-meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;}
+.badge-pending{background:var(--blue-light);color:var(--blue-mid);}
+.badge-transit{background:#fefce8;color:#854d0e;}
+.badge-done{background:var(--green-light);color:var(--green);}
+.badge-cod{background:var(--orange-light);color:var(--orange);}
+.order-actions{display:flex;gap:8px;margin-top:10px;}
+.btn{border:none;border-radius:10px;padding:10px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;}
+.btn-sm{padding:7px 12px;font-size:12px;border-radius:8px;}
+.btn-blue{background:var(--blue-mid);color:#fff;}
+.btn-green{background:var(--green);color:#fff;}
+.btn-orange{background:var(--orange);color:#fff;}
+.btn-outline{background:#fff;color:var(--gray-600);border:1.5px solid var(--gray-200);}
+.btn:active{opacity:.8;}
+.btn-full{width:100%;justify-content:center;}
+
+/* ── SCAN ── */
+#qr-reader{width:100%;border-radius:var(--radius);overflow:hidden;}
+.scan-manual{margin-top:12px;}
+.scan-manual input{width:100%;border:1.5px solid var(--gray-200);border-radius:10px;padding:12px 14px;font-size:15px;font-family:inherit;outline:none;}
+.scan-manual input:focus{border-color:var(--blue-mid);}
+.scan-result{background:var(--green-light);border:1.5px solid #86efac;border-radius:var(--radius);padding:14px;margin-top:12px;}
+
+/* ── STATS ── */
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;}
+.stat-box{background:#fff;border-radius:var(--radius);padding:14px;box-shadow:var(--shadow);text-align:center;}
+.stat-num{font-size:28px;font-weight:800;}
+.stat-label{font-size:11px;color:var(--gray-400);margin-top:2px;font-weight:600;}
+
+/* ── GPS STATUS ── */
+.gps-bar{background:var(--green-light);border:1px solid #86efac;border-radius:10px;padding:8px 12px;display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:12px;}
+.gps-bar.off{background:var(--red-light);border-color:#fecaca;}
+.gps-dot{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0;}
+.gps-bar.off .gps-dot{background:var(--red);}
+
+/* ── PHOTO UPLOAD ── */
+.photo-area{border:2px dashed var(--gray-200);border-radius:var(--radius);padding:24px;text-align:center;cursor:pointer;transition:border-color .15s;}
+.photo-area:active{border-color:var(--blue-mid);}
+.photo-area.has-photo{border-style:solid;border-color:var(--green);padding:0;overflow:hidden;}
+.photo-area img{width:100%;border-radius:calc(var(--radius) - 2px);display:block;}
+.photo-preview{width:100%;border-radius:10px;max-height:250px;object-fit:cover;}
+
+/* ── LOADING ── */
+#loading{position:fixed;inset:0;background:rgba(255,255,255,.9);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:500;gap:12px;}
+#loading.hidden{display:none;}
+.spinner{width:36px;height:36px;border:3px solid var(--gray-200);border-top-color:var(--blue-mid);border-radius:50%;animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* ── TOAST ── */
+#toast{position:fixed;bottom:calc(90px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:var(--gray-800);color:#fff;padding:11px 20px;border-radius:30px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .3s;z-index:999;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.2);}
+#toast.show{opacity:1;}
+
+/* ── MODAL ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;z-index:900;padding-bottom:env(safe-area-inset-bottom);}
+.modal-overlay.hidden{display:none;}
+.modal-sheet{background:#fff;border-radius:20px 20px 0 0;width:100%;max-height:90vh;overflow-y:auto;padding:20px;padding-bottom:calc(20px + env(safe-area-inset-bottom));}
+.modal-handle{width:36px;height:4px;background:var(--gray-200);border-radius:2px;margin:0 auto 16px;}
+.modal-title{font-size:17px;font-weight:800;margin-bottom:16px;}
+
+.empty-state{text-align:center;padding:48px 24px;color:var(--gray-400);}
+.empty-state .empty-icon{font-size:48px;margin-bottom:12px;}
+.empty-state p{font-size:14px;line-height:1.6;}
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div id="loading">
+  <div class="spinner"></div>
+  <div style="font-size:14px;color:var(--gray-600);">連接中...</div>
+</div>
+
+<!-- LOGIN SCREEN -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="emoji">🚛</div>
+      <div class="brand">鐵快</div>
+      <div class="title">司機 App</div>
+      <div class="sub">請使用員工帳號登入</div>
+    </div>
+    <div class="login-err" id="login-err"></div>
+    <div class="inp-group">
+      <label>電子郵件</label>
+      <input id="login-email" type="email" placeholder="employee@tiekuai.com" autocomplete="email">
+    </div>
+    <div class="inp-group">
+      <label>密碼</label>
+      <input id="login-pwd" type="password" placeholder="請輸入密碼" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <div class="login-loading" id="login-loading">登入中...</div>
+    <button class="btn-login" onclick="doLogin()">登入</button>
+  </div>
+</div>
+
+<!-- APP SHELL -->
+<div id="app">
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div class="topbar-icon">🚛</div>
+    <div style="flex:1;">
+      <div class="topbar-title" id="topbar-title">鐵快司機 App</div>
+      <div class="topbar-sub" id="topbar-sub">載入中...</div>
+    </div>
+    <button class="topbar-btn" onclick="doLogout()">登出</button>
+  </div>
+
+  <!-- PAGE: TODAY -->
+  <div class="page active" id="page-today">
+    <div class="page-inner">
+      <div class="stats-grid">
+        <div class="stat-box">
+          <div class="stat-num" id="stat-total" style="color:var(--blue-mid);">0</div>
+          <div class="stat-label">今日任務</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-num" id="stat-done" style="color:var(--green);">0</div>
+          <div class="stat-label">已完成</div>
+        </div>
+      </div>
+      <div class="gps-bar off" id="gps-bar">
+        <div class="gps-dot"></div>
+        <span id="gps-text">GPS 未開啟</span>
+        <button class="btn btn-sm btn-outline" style="margin-left:auto;" onclick="startGPS()">開啟</button>
+      </div>
+      <div id="order-list">
+        <div class="empty-state"><div class="empty-icon">📦</div><p>今日沒有被指派的任務<br>請聯繫管理員</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE: SCAN -->
+  <div class="page" id="page-scan">
+    <div class="page-inner">
+      <div class="card">
+        <div class="card-title">掃描 QR Code</div>
+        <div id="qr-reader"></div>
+        <div style="margin-top:12px;display:flex;gap:8px;">
+          <button class="btn btn-blue btn-sm" onclick="startCamera()" id="cam-start-btn">📷 開啟相機</button>
+          <button class="btn btn-outline btn-sm" onclick="stopCamera()" id="cam-stop-btn" style="display:none;">⏹ 停止</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">手動輸入單號</div>
+        <div class="scan-manual">
+          <input id="manual-input" type="text" placeholder="輸入託運單號（如 TW-20260701-001）">
+          <button class="btn btn-blue btn-full" style="margin-top:8px;" onclick="manualSearch()">🔍 查詢</button>
+        </div>
+      </div>
+      <div id="scan-result-area"></div>
+    </div>
+  </div>
+
+  <!-- PAGE: ROUTE -->
+  <div class="page" id="page-route">
+    <div class="page-inner">
+      <div class="card">
+        <div class="card-title">今日配送路線</div>
+        <div id="route-list"></div>
+        <button class="btn btn-blue btn-full" style="margin-top:12px;" onclick="openAllRoute()">🗺 開啟全程導航</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE: ME -->
+  <div class="page" id="page-me">
+    <div class="page-inner">
+      <div class="card">
+        <div class="card-title">我的資訊</div>
+        <div id="me-info" style="font-size:14px;line-height:2;color:var(--gray-800);"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">GPS 定位</div>
+        <div id="gps-detail" style="font-size:13px;color:var(--gray-600);"></div>
+        <button class="btn btn-blue btn-full" style="margin-top:12px;" onclick="startGPS()">📍 重新開啟 GPS</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BOTTOM NAV -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" id="nav-today" onclick="showPage('today')">
+      <span class="nav-icon">📋</span><span class="nav-label">今日任務</span>
+    </button>
+    <button class="nav-item" id="nav-scan" onclick="showPage('scan')">
+      <span class="nav-icon">📷</span><span class="nav-label">掃描</span>
+    </button>
+    <button class="nav-item" id="nav-route" onclick="showPage('route')">
+      <span class="nav-icon">🗺</span><span class="nav-label">路線</span>
+    </button>
+    <button class="nav-item" id="nav-me" onclick="showPage('me')">
+      <span class="nav-icon">👤</span><span class="nav-label">我的</span>
+    </button>
+  </nav>
+</div>
+
+<!-- DELIVERY CONFIRM MODAL -->
+<div class="modal-overlay hidden" id="modal-deliver">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">📸 確認送達</div>
+    <div id="deliver-order-info" style="background:var(--gray-50);border-radius:10px;padding:12px;margin-bottom:16px;font-size:14px;line-height:1.8;"></div>
+    <div style="margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:600;color:var(--gray-600);margin-bottom:8px;">簽收照片 <span style="color:var(--red)">*</span></div>
+      <div class="photo-area" id="photo-area" onclick="document.getElementById('photo-input').click()">
+        <div style="font-size:32px;margin-bottom:6px;">📷</div>
+        <div style="font-size:13px;color:var(--gray-400);">點擊拍照或選取照片</div>
+        <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoSelect(event)">
+      </div>
+    </div>
+    <button class="btn btn-green btn-full" onclick="confirmDelivery()" id="deliver-btn" style="font-size:15px;padding:14px;">✓ 確認已送達</button>
+    <button class="btn btn-outline btn-full" style="margin-top:8px;" onclick="closeDeliverModal()">取消</button>
+  </div>
+</div>
+
+<!-- MANIFEST CONFIRM MODAL -->
+<div class="modal-overlay hidden" id="modal-manifest">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">📋 出貨表掃描確認</div>
+    <div id="manifest-info" style="font-size:14px;line-height:1.8;margin-bottom:16px;"></div>
+    <button class="btn btn-blue btn-full" onclick="confirmManifestPickup()" style="font-size:15px;padding:14px;">✓ 確認收走所有貨物</button>
+    <button class="btn btn-outline btn-full" style="margin-top:8px;" onclick="closeModal('modal-manifest')">取消</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── GLOBALS ──
+var db, auth, storage, fs, authFn, storageFn;
+var currentUser = null;
+var currentUserData = null;
+var myOrders = [];
+var _unsubOrders = null;
+var gpsWatchId = null;
+var lastGPS = null;
+var photoDataUrl = null;
+var currentDeliverOrderId = null;
+var pendingManifestOrderIds = [];
+var pendingManifestDate = '';
+var html5QrCode = null;
+
+// ── WAIT FOR FIREBASE ──
+function waitFirebase(){
+  return new Promise(function(resolve){
+    if(window._firebaseReady){ db=window._db; auth=window._auth; storage=window._storage; fs=window._fs; authFn=window._authFn; storageFn=window._storageFn; resolve(); }
+    else window.addEventListener('firebase-ready', function(){ db=window._db; auth=window._auth; storage=window._storage; fs=window._fs; authFn=window._authFn; storageFn=window._storageFn; resolve(); }, {once:true});
+  });
+}
+
+async function init(){
+  await waitFirebase();
+  authFn.onAuthStateChanged(auth, async function(user){
+    if(user){
+      var userDoc = await fs.getDoc(fs.doc(db,'users',user.uid));
+      if(!userDoc.exists()){
+        toast('找不到帳號資料，請聯繫管理員');
+        await authFn.signOut(auth);
+        return;
+      }
+      var userData = userDoc.data();
+      if(userData.status !== 'approved' && userData.status !== 'active'){
+        toast('帳號尚未核准，請聯繫管理員');
+        await authFn.signOut(auth);
+        showLoginScreen();
+        return;
+      }
+      currentUser = user;
+      currentUserData = userData;
+      showApp();
+    } else {
+      currentUser = null;
+      currentUserData = null;
+      showLoginScreen();
+    }
+    document.getElementById('loading').classList.add('hidden');
+  });
+}
+
+// ── AUTH ──
+function showLoginScreen(){
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app').classList.remove('visible');
+}
+function showApp(){
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').classList.add('visible');
+  var name = currentUserData.name || currentUser.email;
+  document.getElementById('topbar-sub').textContent = '👤 ' + name;
+  document.getElementById('me-info').innerHTML =
+    '<div><strong>姓名</strong>　'+name+'</div>'+
+    '<div><strong>帳號</strong>　'+currentUser.email+'</div>'+
+    '<div><strong>公司</strong>　'+(currentUserData.company||'—')+'</div>';
+  loadMyOrders();
+  startGPS();
+}
+async function doLogin(){
+  var email = document.getElementById('login-email').value.trim();
+  var pwd   = document.getElementById('login-pwd').value;
+  var errEl = document.getElementById('login-err');
+  var loadEl = document.getElementById('login-loading');
+  errEl.style.display = 'none';
+  if(!email || !pwd){ errEl.textContent='請填寫電子郵件和密碼'; errEl.style.display=''; return; }
+  loadEl.style.display = 'block';
+  try {
+    await authFn.signInWithEmailAndPassword(auth, email, pwd);
+  } catch(e){
+    loadEl.style.display = 'none';
+    var msgs = {
+      'auth/invalid-credential':'帳號或密碼錯誤',
+      'auth/user-not-found':'找不到此帳號',
+      'auth/wrong-password':'密碼錯誤',
+      'auth/network-request-failed':'網路連線失敗'
+    };
+    errEl.textContent = msgs[e.code] || '登入失敗：'+e.message;
+    errEl.style.display = '';
+  }
+}
+async function doLogout(){
+  if(!confirm('確定要登出嗎？')) return;
+  stopGPS();
+  if(_unsubOrders){ _unsubOrders(); _unsubOrders=null; }
+  await authFn.signOut(auth);
+}
+
+// ── PAGES ──
+function showPage(id){
+  document.querySelectorAll('.page').forEach(function(p){ p.classList.remove('active'); });
+  document.querySelectorAll('.nav-item').forEach(function(n){ n.classList.remove('active'); });
+  document.getElementById('page-'+id).classList.add('active');
+  var navEl = document.getElementById('nav-'+id);
+  if(navEl) navEl.classList.add('active');
+  if(id==='route') renderRoute();
+}
+
+// ── ORDERS ──
+function loadMyOrders(){
+  if(_unsubOrders){ _unsubOrders(); }
+  var today = todayYMD();
+  var col = fs.collection(db,'orders');
+  // Realtime: fetch all today's orders assigned to this driver
+  _unsubOrders = fs.onSnapshot(col, function(snap){
+    var allOrders = snap.docs.map(function(d){ return d.data(); });
+    // Filter: assigned to this vehicle/driver OR no driver assigned but show today's
+    myOrders = allOrders.filter(function(o){
+      if(o.date !== today) return false;
+      // Show orders assigned to this user (by email match to assignedDriverName or by driver uid)
+      if(o.assignedDriverEmail === currentUser.email) return true;
+      if(o.assignedDriverName && currentUserData.name && o.assignedDriverName === currentUserData.name) return true;
+      return false;
+    });
+    renderOrders();
+    renderRoute();
+    updateStats();
+  });
+}
+
+function todayYMD(){
+  var d=new Date();
+  return ''+d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
+}
+
+function renderOrders(){
+  var el = document.getElementById('order-list');
+  if(!myOrders.length){
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">📦</div><p>今日沒有被指派的任務<br>請聯繫管理員</p></div>';
+    return;
+  }
+  el.innerHTML = myOrders.map(function(o){
+    var isCod = o.payment && o.payment.type==='cod';
+    var isDone = o.status==='done';
+    var isTransit = o.status==='transit';
+    var statusBadge = isDone
+      ? '<span class="badge badge-done">✓ 已送達</span>'
+      : isTransit
+      ? '<span class="badge badge-transit">🚛 配送中</span>'
+      : '<span class="badge badge-pending">待取件</span>';
+    var codBadge = isCod ? '<span class="badge badge-cod">💰 到付 $'+(o.payment.collect||'?')+'</span>' : '';
+    var actions = isDone
+      ? '<div style="font-size:12px;color:var(--green);font-weight:600;margin-top:8px;">✓ 已完成</div>'
+      : '<div class="order-actions">'+
+        '<button class="btn btn-sm btn-blue" onclick="navigateTo(\''+encodeURIComponent(o.receiver.addr)+'\')">🗺 導航</button>'+
+        (isTransit
+          ? '<button class="btn btn-sm btn-green" onclick="openDeliverModal(\''+o.id+'\')">📷 確認送達</button>'
+          : '<button class="btn btn-sm btn-outline" onclick="confirmPickupSingle(\''+o.id+'\')">✓ 確認取件</button>')+
+        '</div>';
+    return '<div class="order-card'+(isCod?' cod':'')+(isDone?' done':'')+'">'+
+      '<div class="order-id">'+o.id+'</div>'+
+      '<div class="order-name">'+o.receiver.name+'</div>'+
+      '<div class="order-phone">'+o.receiver.phone+'</div>'+
+      '<div class="order-addr">'+o.receiver.addr+'</div>'+
+      '<div class="order-meta">'+statusBadge+codBadge+
+      '<span style="font-size:11px;color:var(--gray-400);">'+o.item.qty+'件'+(o.item.weight?'／'+o.item.weight+'kg':'')+'</span>'+
+      '</div>'+actions+'</div>';
+  }).join('');
+}
+
+function updateStats(){
+  document.getElementById('stat-total').textContent = myOrders.length;
+  document.getElementById('stat-done').textContent  = myOrders.filter(function(o){ return o.status==='done'; }).length;
+}
+
+// ── PICKUP / DELIVERY STATUS UPDATE ──
+async function confirmPickupSingle(orderId){
+  try {
+    await fs.updateDoc(fs.doc(db,'orders',orderId),{status:'transit',updatedAt:new Date().toISOString()});
+    toast('✓ 已確認取件，開始配送');
+  } catch(e){ toast('更新失敗：'+e.message); }
+}
+
+async function confirmManifestPickup(){
+  if(!pendingManifestOrderIds.length) return;
+  var toUpdate = pendingManifestOrderIds.filter(function(id){
+    var o = myOrders.find(function(x){ return x.id===id; });
+    return o && o.status !== 'transit' && o.status !== 'done';
+  });
+  try {
+    for(var i=0;i<toUpdate.length;i++){
+      await fs.updateDoc(fs.doc(db,'orders',toUpdate[i]),{status:'transit',updatedAt:new Date().toISOString()});
+    }
+    toast('✓ 已確認取走 '+toUpdate.length+' 筆貨物，開始配送');
+    closeModal('modal-manifest');
+  } catch(e){ toast('更新失敗：'+e.message); }
+}
+
+// ── DELIVERY WITH PHOTO ──
+function openDeliverModal(orderId){
+  currentDeliverOrderId = orderId;
+  photoDataUrl = null;
+  document.getElementById('photo-area').className = 'photo-area';
+  document.getElementById('photo-area').innerHTML =
+    '<div style="font-size:32px;margin-bottom:6px;">📷</div>'+
+    '<div style="font-size:13px;color:var(--gray-400);">點擊拍照或選取照片</div>'+
+    '<input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoSelect(event)">';
+  var o = myOrders.find(function(x){ return x.id===orderId; });
+  if(!o) return;
+  var isCod = o.payment && o.payment.type==='cod';
+  document.getElementById('deliver-order-info').innerHTML =
+    '<strong>'+o.receiver.name+'</strong><br>'+
+    '<span style="color:var(--blue-mid);">'+o.receiver.phone+'</span><br>'+
+    o.receiver.addr+
+    (isCod ? '<br><span style="color:var(--orange);font-weight:700;">💰 請向收件人收取 $'+o.payment.collect+'</span>' : '');
+  document.getElementById('modal-deliver').classList.remove('hidden');
+}
+function closeDeliverModal(){
+  document.getElementById('modal-deliver').classList.add('hidden');
+  currentDeliverOrderId = null;
+  photoDataUrl = null;
+}
+function handlePhotoSelect(e){
+  var file = e.target.files[0];
+  if(!file) return;
+  // Compress image before upload
+  var reader = new FileReader();
+  reader.onload = function(evt){
+    var img = new Image();
+    img.onload = function(){
+      var canvas = document.createElement('canvas');
+      var maxW = 1200, maxH = 1200;
+      var w = img.width, h = img.height;
+      if(w > maxW){ h = h*(maxW/w); w = maxW; }
+      if(h > maxH){ w = w*(maxH/h); h = maxH; }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      photoDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+      var photoArea = document.getElementById('photo-area');
+      photoArea.className = 'photo-area has-photo';
+      photoArea.innerHTML = '<img src="'+photoDataUrl+'" class="photo-preview">' +
+        '<input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoSelect(event)">';
+    };
+    img.src = evt.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+async function confirmDelivery(){
+  if(!currentDeliverOrderId){ toast('錯誤：找不到訂單'); return; }
+  if(!photoDataUrl){ toast('請先拍照上傳簽收照片'); return; }
+  var btn = document.getElementById('deliver-btn');
+  btn.disabled = true;
+  btn.textContent = '上傳中...';
+  try {
+    // Convert dataUrl to Blob
+    var res = await fetch(photoDataUrl);
+    var blob = await res.blob();
+    // Upload to Firebase Storage
+    var path = 'signatures/'+currentDeliverOrderId+'_'+Date.now()+'.jpg';
+    var storageRef = storageFn.ref(storage, path);
+    await storageFn.uploadBytes(storageRef, blob);
+    var downloadUrl = await storageFn.getDownloadURL(storageRef);
+    // Update order in Firestore
+    await fs.updateDoc(fs.doc(db,'orders',currentDeliverOrderId),{
+      status: 'done',
+      signatureUrl: downloadUrl,
+      deliveredAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      deliveredByEmail: currentUser.email,
+      deliveredByName: currentUserData.name || currentUser.email
+    });
+    toast('✓ 送達確認成功！');
+    closeDeliverModal();
+  } catch(e){
+    console.error(e);
+    toast('上傳失敗：'+e.message);
+    btn.disabled = false;
+    btn.textContent = '✓ 確認已送達';
+  }
+}
+
+// ── QR SCAN ──
+async function startCamera(){
+  document.getElementById('cam-start-btn').style.display = 'none';
+  document.getElementById('cam-stop-btn').style.display  = '';
+  if(!html5QrCode){
+    html5QrCode = new Html5Qrcode('qr-reader');
+  }
+  try {
+    await html5QrCode.start(
+      {facingMode:'environment'},
+      {fps:10, qrbox:{width:250,height:250}},
+      function(decodedText){
+        stopCamera();
+        handleQRResult(decodedText);
+      },
+      function(){}
+    );
+  } catch(e){
+    toast('相機開啟失敗：請允許相機權限');
+    document.getElementById('cam-start-btn').style.display = '';
+    document.getElementById('cam-stop-btn').style.display  = 'none';
+  }
+}
+function stopCamera(){
+  document.getElementById('cam-start-btn').style.display = '';
+  document.getElementById('cam-stop-btn').style.display  = 'none';
+  if(html5QrCode){
+    html5QrCode.stop().catch(function(){});
+  }
+}
+function handleQRResult(data){
+  toast('✓ 掃描成功！');
+  try {
+    var parsed = JSON.parse(data);
+    // Manifest pickup QR: batch confirm all orders on that date
+    if(parsed.type==='manifest_pickup' && Array.isArray(parsed.orderIds)){
+      pendingManifestOrderIds = parsed.orderIds;
+      pendingManifestDate = parsed.date;
+      var matched = parsed.orderIds.filter(function(id){ return myOrders.some(function(o){ return o.id===id; }); });
+      var notMine = parsed.orderIds.length - matched.length;
+      document.getElementById('manifest-info').innerHTML =
+        '出貨日期：<strong>'+parsed.date+'</strong><br>'+
+        '出貨表共 <strong>'+parsed.orderIds.length+'</strong> 筆訂單<br>'+
+        '屬於您的 <strong>'+matched.length+'</strong> 筆'+
+        (notMine?' <span style="color:var(--gray-400);">（另 '+notMine+' 筆非本人負責）</span>':'')+
+        '<br><br>確認後將這些訂單標記為「配送中」';
+      document.getElementById('modal-manifest').classList.remove('hidden');
+      return;
+    }
+    // Single order QR
+    var o = myOrders.find(function(x){ return x.id===parsed.id; });
+    if(o){ showScanResult(o); return; }
+  } catch(e){}
+  // Try as plain order ID
+  var o2 = myOrders.find(function(x){ return x.id===data.trim(); });
+  if(o2){ showScanResult(o2); return; }
+  document.getElementById('scan-result-area').innerHTML =
+    '<div style="background:var(--red-light);border:1.5px solid #fecaca;border-radius:var(--radius);padding:14px;margin-top:12px;font-size:14px;color:var(--red);">⚠️ 找不到此訂單，可能不屬於今日您的配送清單</div>';
+}
+function showScanResult(o){
+  var isCod = o.payment && o.payment.type==='cod';
+  var isDone = o.status==='done';
+  var area = document.getElementById('scan-result-area');
+  area.innerHTML = '<div class="scan-result">'+
+    '<div style="font-size:12px;color:var(--green);font-weight:700;margin-bottom:8px;">✓ 訂單已找到</div>'+
+    '<div style="font-size:17px;font-weight:800;">'+o.receiver.name+'</div>'+
+    '<div style="font-size:14px;color:var(--blue-mid);margin:2px 0;">'+o.receiver.phone+'</div>'+
+    '<div style="font-size:13px;color:var(--gray-600);">'+o.receiver.addr+'</div>'+
+    (isCod?'<div style="color:var(--orange);font-weight:700;margin-top:6px;">💰 到付 $'+o.payment.collect+'</div>':'')+
+    '</div>'+
+    (isDone
+      ? '<div style="font-size:13px;color:var(--green);font-weight:600;margin-top:8px;">✓ 此訂單已完成送達</div>'
+      : '<div style="display:flex;gap:8px;margin-top:10px;">'+
+        '<button class="btn btn-sm btn-blue" onclick="navigateTo(\''+encodeURIComponent(o.receiver.addr)+'\')">🗺 導航</button>'+
+        '<button class="btn btn-sm btn-green" onclick="openDeliverModal(\''+o.id+'\')">📷 確認送達</button>'+
+        '</div>');
+}
+function manualSearch(){
+  var val = document.getElementById('manual-input').value.trim();
+  if(!val){ toast('請輸入單號'); return; }
+  var o = myOrders.find(function(x){ return x.id===val; });
+  if(o){ showScanResult(o); }
+  else { document.getElementById('scan-result-area').innerHTML = '<div style="background:var(--red-light);border:1.5px solid #fecaca;border-radius:var(--radius);padding:14px;margin-top:12px;font-size:14px;color:var(--red);">找不到訂單「'+val+'」</div>'; }
+}
+
+// ── ROUTE ──
+function renderRoute(){
+  var el = document.getElementById('route-list');
+  var pending = myOrders.filter(function(o){ return o.status!=='done'; });
+  if(!pending.length){
+    el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--gray-400);font-size:13px;">🎉 今日全部配送完畢！</div>';
+    return;
+  }
+  el.innerHTML = pending.map(function(o, i){
+    return '<div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--gray-100);">'+
+      '<div style="width:24px;height:24px;border-radius:50%;background:var(--blue-mid);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">'+(i+1)+'</div>'+
+      '<div style="flex:1;">'+
+      '<div style="font-size:14px;font-weight:700;">'+o.receiver.name+'</div>'+
+      '<div style="font-size:12px;color:var(--blue-mid);">'+o.receiver.phone+'</div>'+
+      '<div style="font-size:12px;color:var(--gray-600);">'+o.receiver.addr+'</div>'+
+      '</div>'+
+      '<button class="btn btn-sm btn-outline" onclick="navigateTo(\''+encodeURIComponent(o.receiver.addr)+'\')">導航</button>'+
+      '</div>';
+  }).join('');
+}
+function navigateTo(encodedAddr){
+  var addr = decodeURIComponent(encodedAddr);
+  window.open('https://maps.google.com/maps?q='+encodeURIComponent(addr)+'&mode=driving','_blank');
+}
+function openAllRoute(){
+  var pending = myOrders.filter(function(o){ return o.status!=='done'; });
+  if(!pending.length){ toast('今日配送已全部完成！'); return; }
+  var origin = lastGPS ? lastGPS.lat+','+lastGPS.lng : '';
+  var addrs = pending.map(function(o){ return encodeURIComponent(o.receiver.addr); });
+  var dest = addrs.pop();
+  var waypoints = addrs.join('/');
+  var url = 'https://www.google.com/maps/dir/'+(origin?encodeURIComponent(origin)+'/' : '')+waypoints+'/'+(dest||'');
+  window.open(url,'_blank');
+}
+
+// ── GPS ──
+function startGPS(){
+  if(!navigator.geolocation){ toast('此裝置不支援 GPS'); return; }
+  if(gpsWatchId) navigator.geolocation.clearWatch(gpsWatchId);
+  gpsWatchId = navigator.geolocation.watchPosition(
+    function(pos){
+      lastGPS = {lat: pos.coords.latitude, lng: pos.coords.longitude, acc: Math.round(pos.coords.accuracy)};
+      updateGPSUI(true);
+      uploadGPS(lastGPS);
+    },
+    function(err){
+      updateGPSUI(false);
+      toast('GPS 定位失敗：'+err.message);
+    },
+    {enableHighAccuracy:true, maximumAge:15000, timeout:10000}
+  );
+}
+function stopGPS(){
+  if(gpsWatchId){ navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId=null; }
+}
+function updateGPSUI(on){
+  var bar = document.getElementById('gps-bar');
+  var text = document.getElementById('gps-text');
+  bar.className = 'gps-bar' + (on?'':' off');
+  text.textContent = on ? ('GPS 已開啟 (' + (lastGPS?lastGPS.lat.toFixed(4)+', '+lastGPS.lng.toFixed(4):'定位中...') + ')') : 'GPS 定位失敗';
+  document.getElementById('gps-detail').innerHTML = on && lastGPS
+    ? '緯度：'+lastGPS.lat+'<br>經度：'+lastGPS.lng+'<br>精度：±'+lastGPS.acc+' 公尺'
+    : '未取得定位';
+}
+var _lastGPSUploadTime = 0;
+async function uploadGPS(pos){
+  // Rate limit: upload at most once every 30 seconds
+  var now = Date.now();
+  if(now - _lastGPSUploadTime < 30000) return;
+  _lastGPSUploadTime = now;
+  if(!currentUser) return;
+  try {
+    await fs.setDoc(fs.doc(db,'driver_locations',currentUser.uid),{
+      uid: currentUser.uid,
+      email: currentUser.email,
+      name: currentUserData.name || '',
+      lat: pos.lat, lng: pos.lng, acc: pos.acc,
+      updatedAt: new Date().toISOString()
+    });
+  } catch(e){ console.error('GPS upload error:', e); }
+}
+
+// ── UTILS ──
+function closeModal(id){ document.getElementById(id).classList.add('hidden'); }
+function toast(msg){
+  var el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(function(){ el.classList.remove('show'); }, 2800);
+}
+
+// ── EXPOSE TO HTML ──
+window.doLogin = doLogin;
+window.doLogout = doLogout;
+window.showPage = showPage;
+window.startCamera = startCamera;
+window.stopCamera = stopCamera;
+window.manualSearch = manualSearch;
+window.openDeliverModal = openDeliverModal;
+window.closeDeliverModal = closeDeliverModal;
+window.handlePhotoSelect = handlePhotoSelect;
+window.confirmDelivery = confirmDelivery;
+window.confirmPickupSingle = confirmPickupSingle;
+window.confirmManifestPickup = confirmManifestPickup;
+window.navigateTo = navigateTo;
+window.openAllRoute = openAllRoute;
+window.startGPS = startGPS;
+window.closeModal = closeModal;
+
+init();
+</script>
+</body>
+</html>
